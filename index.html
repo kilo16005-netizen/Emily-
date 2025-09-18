@@ -234,20 +234,156 @@
 
 </script>
 
-<!-- Firebase -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
 
+  <script type="module">
+  // SDKs via CDN
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+  import {
+    getFirestore, collection, addDoc, getDocs, updateDoc,
+    doc, increment, arrayUnion, serverTimestamp, query, orderBy
+  } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-storage.js";
+
+  // --- CONFIG: mantenha suas chaves do Firebase (já configuradas no console) ---
   const firebaseConfig = {
     apiKey: "AIzaSyBjnSLKBdpz13_9jxlqwnQRNLXNtfPoq9o",
     authDomain: "emily01-ab49c.firebaseapp.com",
     projectId: "emily01-ab49c",
-    storageBucket: "emily01-ab49c.firebasestorage.app",
+    storageBucket: "emily01-ab49c.appspot.com", // use .appspot.com
     messagingSenderId: "955907136214",
     appId: "1:955907136214:web:516ea542ebb20e70f18777"
   };
-  
-  storageBucket: "emily01-ab49c.appspot.com",
+
+  // Inicializa
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  // Elementos da página (assumo que já existem no seu HTML)
+  const publishBtn = document.getElementById("publishBtn");
+  const postContent = document.getElementById("postContent");
+  const mediaInput = document.getElementById("mediaInput");
+  const feed = document.getElementById("feed");
+  const darkToggle = document.getElementById("darkToggle");
+  const configBtn = document.getElementById("configBtn");
+  const publishSection = document.getElementById("publishSection");
+
+  // Função que cria o elemento visual do post e anexa handlers
+  function createPostElement(id, data) {
+    const post = document.createElement("div");
+    post.className = "post";
+    post.dataset.id = id;
+
+    const mediaHTML = data.media
+      ? (data.media.includes(".mp4") ? `<video controls style="max-width:100%"><source src="${data.media}"></video>` : `<img src="${data.media}" style="max-width:100%;border-radius:8px;">`)
+      : "";
+
+    post.innerHTML = `
+      <h3>${data.title || "Emily01News News"}</h3>
+      <p>${data.text || ""}</p>
+      ${mediaHTML}
+      <div style="margin-top:8px;">
+        <button class="btn likeBtn">❤️ (<span class="likeCount">${data.likes||0}</span>)</button>
+        <span style="margin-left:8px">👁️ <span class="viewCount">${(data.views||0)}</span></span>
+        <button class="btn commentToggle" style="margin-left:12px">💬 Comentários</button>
+      </div>
+      <div class="comments hidden" style="margin-top:8px">
+        <input type="text" class="commentInput" placeholder="Escreva um comentário..." style="width:70%">
+        <button class="btn addComment">Comentar</button>
+        <div class="commentList" style="margin-top:8px">
+          ${(data.comments||[]).map(c => `<div class="comment">${c}</div>`).join("")}
+        </div>
+      </div>
+    `;
+
+    // Like handler
+    post.querySelector(".likeBtn").addEventListener("click", async () => {
+      const likeSpan = post.querySelector(".likeCount");
+      likeSpan.textContent = parseInt(likeSpan.textContent) + 1;
+      await updateDoc(doc(db, "posts", id), { likes: increment(1) });
+    });
+
+    // View is already incremented on loadPosts (server-side increment), but update UI if needed
+
+    // Toggle comments
+    const commentsDiv = post.querySelector(".comments");
+    post.querySelector(".commentToggle").addEventListener("click", () => {
+      commentsDiv.classList.toggle("hidden");
+    });
+
+    // Add comment
+    post.querySelector(".addComment").addEventListener("click", async () => {
+      const input = post.querySelector(".commentInput");
+      const text = input.value.trim();
+      if (!text) return;
+      // Append visually
+      const list = post.querySelector(".commentList");
+      const el = document.createElement("div");
+      el.className = "comment";
+      el.textContent = text;
+      list.appendChild(el);
+      input.value = "";
+      // Save to Firestore
+      await updateDoc(doc(db, "posts", id), { comments: arrayUnion(text) });
+    });
+
+    return post;
+  }
+
+  // Publicar (envia mídia ao Storage se houver e salva post no Firestore)
+  publishBtn.addEventListener("click", async () => {
+    const text = (postContent?.value || "").trim();
+    if (!text && !(mediaInput && mediaInput.files.length)) return alert("Escreva algo ou adicione mídia");
+
+    let mediaURL = "";
+    if (mediaInput && mediaInput.files.length) {
+      const file = mediaInput.files[0];
+      const fileRef = ref(storage, "uploads/" + Date.now() + "_" + file.name);
+      await uploadBytes(fileRef, file);
+      mediaURL = await getDownloadURL(fileRef);
+    }
+
+    await addDoc(collection(db, "posts"), {
+      title: "Emily01News News",
+      text,
+      media: mediaURL,
+      createdAt: serverTimestamp(),
+      likes: 0,
+      views: 0,
+      comments: []
+    });
+
+    // limpar e recarregar
+    if (postContent) postContent.value = "";
+    if (mediaInput) mediaInput.value = "";
+    loadPosts();
+  });
+
+  // Carrega posts ordenados do mais novo para o mais antigo, incrementando views
+  async function loadPosts() {
+    feed.innerHTML = "";
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    for (const docSnap of snap.docs) {
+      const id = docSnap.id;
+      const data = docSnap.data();
+
+      // incrementa views (cada vez que a lista é carregada)
+      await updateDoc(doc(db, "posts", id), { views: increment(1) });
+
+      // criar o elemento com dados atualizados (usamos data mas UI mostrará data.views + 1)
+      const postEl = createPostElement(id, { ...data, views: (data.views||0) + 1 });
+      feed.appendChild(postEl);
+    }
+  }
+
+  // Dark mode (se já existe botão)
+  if (darkToggle) darkToggle.addEventListener("click", () => document.body.classList.toggle("dark"));
+
+  // Inicial
+  loadPosts();
+
+  // Observação: se tiver outro script antigo que manipula publishBtn/feed, remova-o para não duplicar eventos.
 </script>
 
 </body>
