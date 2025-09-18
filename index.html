@@ -231,6 +231,25 @@
 
     // Ativar eventos para post inicial
     document.querySelectorAll(".post").forEach(p => attachPostEvents(p));
-  </script>
+
+</script>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBjnSLKBdpz13_9jxlqwnQRNLXNtfPoq9o",
+    authDomain: "emily01-ab49c.firebaseapp.com",
+    projectId: "emily01-ab49c",
+    storageBucket: "emily01-ab49c.firebasestorage.app",
+    messagingSenderId: "955907136214",
+    appId: "1:955907136214:web:516ea542ebb20e70f18777"
+  };
+
+  const app = initializeApp(firebaseConfig);
+</script>
+
 </body>
 </html>
+    
