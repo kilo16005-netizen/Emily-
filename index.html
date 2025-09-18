@@ -1,92 +1,265 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Emily01news News</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Emily01News</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .post { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
-    .comment { margin-left: 20px; font-size: 14px; color: #333; }
-    button { margin-top: 5px; }
+    :root{--glass: rgba(255,255,255,0.08);--btn: rgba(255,255,255,0.18);}
+    body{
+      font-family: Arial,Helvetica,sans-serif;
+      margin:0;min-height:100vh;
+      background: linear-gradient(135deg,#1e1b4b,#6d28d9,#db2777);
+      color:#fff;
+    }
+    header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(0,0,0,0.38)}
+    header h1{margin:0;font-size:18px}
+    .container{max-width:900px;margin:18px auto;padding:0 12px}
+    .card{background:var(--glass);padding:12px;border-radius:12px;margin-bottom:12px}
+    .publish-area textarea{width:100%;height:70px;border-radius:8px;padding:8px;border:none;resize:vertical}
+    .row{display:flex;gap:8px;align-items:center}
+    .btn{background:var(--btn);border:none;padding:8px 10px;border-radius:8px;color:white;cursor:pointer}
+    .post .media{max-width:100%;border-radius:8px;margin-top:8px}
+    .meta{font-size:12px;opacity:0.9;margin-top:6px}
+    .comments{margin-top:8px;padding-left:8px;border-left:2px solid rgba(255,255,255,0.06)}
+    input[type=file]{color:transparent}
+    .hidden{display:none}
+    .small{font-size:13px;padding:6px 8px;border-radius:6px}
   </style>
 </head>
 <body>
-
-  <h1>Emily01news News</h1>
-
-  <div class="post" id="post1">
-    <p>Este é um post de exemplo.</p>
-    <button class="like-btn">Curtir <span id="like-count">0</span></button>
-    <div class="comments">
-      <input type="text" placeholder="Escreva um comentário" class="comment-input">
-      <button class="comment-btn">Comentar</button>
-      <div class="comment-list"></div>
+  <header>
+    <h1>Emily01News</h1>
+    <div>
+      <button id="darkToggle" class="btn">🌙</button>
+      <button id="openPublish" class="btn">E</button>
     </div>
+  </header>
+
+  <div class="container">
+    <div id="publishSection" class="card hidden publish-area">
+      <h3>Nova publicação (Título será: <strong>Emily01News News</strong>)</h3>
+      <textarea id="postContent" placeholder="Escreva sua notícia..."></textarea>
+      <div style="margin-top:8px" class="row">
+        <input id="mediaInput" type="file" accept="image/*,video/*">
+        <button id="publishBtn" class="btn">Publicar</button>
+      </div>
+      <p class="small" style="opacity:.9;margin-top:6px">Fotos e vídeos serão enviados para o Firebase Storage.</p>
+    </div>
+
+    <main id="feed"></main>
   </div>
 
-  <!-- Firebase -->
+  <!-- SCRIPT: Firebase + App logic -->
   <script type="module">
+    /* ===== imports Firebase (CDN) ===== */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, onSnapshot } 
-      from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+    import {
+      getFirestore, collection, addDoc, getDocs, doc, updateDoc,
+      increment, arrayUnion, serverTimestamp, query, orderBy, onSnapshot
+    } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-storage.js";
 
+    /* ====== CONFIG - USE SUAS CHAVES (já preenchidas aqui com as suas) ====== */
     const firebaseConfig = {
       apiKey: "AIzaSyBjnSLKBdpz13_9jxlqwnQRNLXNtfPoq9o",
       authDomain: "emily01-ab49c.firebaseapp.com",
       projectId: "emily01-ab49c",
-      storageBucket: "emily01-ab49c.firebasestorage.app",
+      storageBucket: "emily01-ab49c.appspot.com",
       messagingSenderId: "955907136214",
       appId: "1:955907136214:web:516ea542ebb20e70f18777"
     };
 
+    /* ===== Inicializa serviços ===== */
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const storage = getStorage(app);
 
-    // Referências
-    const postId = "post1";
-    const likeBtn = document.querySelector(".like-btn");
-    const likeCountSpan = document.getElementById("like-count");
-    const commentBtn = document.querySelector(".comment-btn");
-    const commentInput = document.querySelector(".comment-input");
-    const commentList = document.querySelector(".comment-list");
+    /* ===== Elementos da UI ===== */
+    const openPublish = document.getElementById('openPublish');
+    const publishSection = document.getElementById('publishSection');
+    const publishBtn = document.getElementById('publishBtn');
+    const postContent = document.getElementById('postContent');
+    const mediaInput = document.getElementById('mediaInput');
+    const feed = document.getElementById('feed');
+    const darkToggle = document.getElementById('darkToggle');
 
-    // Curtidas - atualizar e salvar
-    likeBtn.addEventListener("click", async () => {
-      const docRef = doc(db, "posts", postId);
-      await updateDoc(docRef, { likes: (parseInt(likeCountSpan.textContent) + 1) });
+    /* Toggle publish area (simple password prompt as before) */
+    openPublish.addEventListener('click', () => {
+      const pw = prompt("Digite a senha:");
+      if (pw === "1234") publishSection.classList.toggle('hidden');
+      else alert("Senha incorreta");
     });
 
-    // Comentários - salvar
-    commentBtn.addEventListener("click", async () => {
-      const text = commentInput.value.trim();
-      if (text !== "") {
-        await addDoc(collection(db, "posts", postId, "comments"), {
-          text: text,
-          createdAt: new Date()
+    /* Dark mode simple */
+    darkToggle.addEventListener('click', () => document.body.classList.toggle('dark'));
+
+    /* Helper: upload file to Storage and return download URL */
+    async function uploadFile(file){
+      if(!file) return "";
+      const path = `uploads/${Date.now()}_${file.name}`;
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      return url;
+    }
+
+    /* Publish: upload media (if any) and create post doc */
+    publishBtn.addEventListener('click', async () => {
+      const text = (postContent.value || "").trim();
+      const file = mediaInput.files && mediaInput.files[0];
+      if(!text && !file) return alert("Escreva algo ou adicione uma mídia");
+
+      publishBtn.disabled = true;
+      publishBtn.textContent = "Publicando...";
+
+      try {
+        const mediaURL = file ? await uploadFile(file) : "";
+        await addDoc(collection(db, "posts"), {
+          title: "Emily01News News",
+          text,
+          media: mediaURL,
+          createdAt: serverTimestamp(),
+          likes: 0,
+          views: 0,
+          // comments stored as subcollection
         });
-        commentInput.value = "";
+        postContent.value = "";
+        mediaInput.value = "";
+      } catch(e){
+        console.error("Erro ao publicar:", e);
+        alert("Erro ao publicar (ver console)");
+      } finally {
+        publishBtn.disabled = false;
+        publishBtn.textContent = "Publicar";
       }
     });
 
-    // Mostrar curtidas em tempo real
-    onSnapshot(doc(db, "posts", postId), (docSnap) => {
-      if (docSnap.exists()) {
-        likeCountSpan.textContent = docSnap.data().likes || 0;
-      }
-    });
+    /* Local helpers to avoid double-counting views/likes per client */
+    function markViewedLocally(postId){ localStorage.setItem("viewed_"+postId, "1"); }
+    function hasViewedLocally(postId){ return localStorage.getItem("viewed_"+postId) === "1"; }
+    function markLikedLocally(postId){ localStorage.setItem("liked_"+postId, "1"); }
+    function hasLikedLocally(postId){ return localStorage.getItem("liked_"+postId) === "1"; }
 
-    // Mostrar comentários em tempo real
-    onSnapshot(collection(db, "posts", postId, "comments"), (snapshot) => {
-      commentList.innerHTML = "";
-      snapshot.forEach(doc => {
-        const c = document.createElement("div");
-        c.className = "comment";
-        c.textContent = doc.data().text;
-        commentList.appendChild(c);
+    /* Create post DOM and attach handlers
+       We'll attach a realtime listener for comments for each post */
+    function createPostElement(id, data) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'card post';
+      wrapper.dataset.id = id;
+
+      const mediaHTML = data.media
+        ? (data.media.includes('.mp4') ? `<video class="media" controls src="${data.media}"></video>` : `<img class="media" src="${data.media}">`)
+        : "";
+
+      // use data.views (already incremented on server when listing) but if not present show 0
+      const likes = data.likes || 0;
+      const views = data.views || 0;
+
+      wrapper.innerHTML = `
+        <h3>${(data.title)||"Emily01News News"}</h3>
+        <p>${(data.text)||""}</p>
+        ${mediaHTML}
+        <div class="meta row" style="margin-top:8px;align-items:center;">
+          <button class="btn likeBtn">❤️ <span class="likeCount">${likes}</span></button>
+          <span style="margin-left:12px">👁️ <span class="viewCount">${views}</span></span>
+          <button class="btn commentToggle" style="margin-left:12px">💬 Comentários</button>
+        </div>
+        <div class="comments hidden">
+          <div style="margin-top:8px" class="row">
+            <input class="small commentInput" placeholder="Escreva um comentário..." style="flex:1">
+            <button class="btn addComment">Comentar</button>
+          </div>
+          <div class="commentList" style="margin-top:8px"></div>
+        </div>
+      `;
+
+      // like handler
+      const likeBtn = wrapper.querySelector('.likeBtn');
+      const likeCountSpan = wrapper.querySelector('.likeCount');
+      likeBtn.addEventListener('click', async () => {
+        if(hasLikedLocally(id)){ alert("Você já curtiu este post."); return; }
+        likeCountSpan.textContent = parseInt(likeCountSpan.textContent || "0") + 1;
+        try{ await updateDoc(doc(db, "posts", id), { likes: increment(1) }); markLikedLocally(id); }
+        catch(e){ console.error("Erro ao curtir:", e); }
       });
-    });
-  </script>
 
+      // view already incremented when loading posts (handled in listener)
+      // toggle comments
+      const commentToggle = wrapper.querySelector('.commentToggle');
+      const commentsDiv = wrapper.querySelector('.comments');
+      commentToggle.addEventListener('click', () => commentsDiv.classList.toggle('hidden'));
+
+      // add comment: writes to subcollection posts/{id}/comments
+      const addCommentBtn = wrapper.querySelector('.addComment');
+      const commentInput = wrapper.querySelector('.commentInput');
+      const commentListDiv = wrapper.querySelector('.commentList');
+
+      addCommentBtn.addEventListener('click', async () => {
+        const text = (commentInput.value || "").trim();
+        if(!text) return;
+        addCommentBtn.disabled = true;
+        try {
+          await addDoc(collection(db, "posts", id, "comments"), {
+            text,
+            createdAt: serverTimestamp()
+          });
+          commentInput.value = "";
+        } catch(e){
+          console.error("Erro ao comentar:", e);
+        } finally {
+          addCommentBtn.disabled = false;
+        }
+      });
+
+      // realtime comments listener for this post
+      const commentsQuery = query(collection(db, "posts", id, "comments"), orderBy("createdAt","asc"));
+      onSnapshot(commentsQuery, snap => {
+        commentListDiv.innerHTML = "";
+        snap.forEach(d => {
+          const dv = d.data();
+          const el = document.createElement('div');
+          el.className = 'comment';
+          const time = dv.createdAt && dv.createdAt.toDate ? dv.createdAt.toDate().toLocaleString() : "";
+          el.innerHTML = `<strong>${time}</strong> — ${dv.text || ""}`;
+          commentListDiv.appendChild(el);
+        });
+      });
+
+      return wrapper;
+    }
+
+    /* Load posts in realtime and render them (newest first) */
+    const postsQuery = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    onSnapshot(postsQuery, async (snapshot) => {
+      feed.innerHTML = "";
+      // process docs in order
+      for(const docSnap of snapshot.docs){
+        const id = docSnap.id;
+        const data = docSnap.data();
+
+        // increment views once per client (store local)
+        if(!hasViewedLocally(id)){
+          try { await updateDoc(doc(db, "posts", id), { views: increment(1) }); markViewedLocally(id); }
+          catch(e){ console.error("Erro incrementando views:", e); }
+        }
+
+        // fetch updated doc after increment (optional) - but snapshot includes live data so use docSnap.data()
+        const updatedData = { ...data };
+        // if views were not present, show 1 (we incremented)
+        updatedData.views = (data.views || 0) + (hasViewedLocally(id) ? 1 : 0);
+
+        const postEl = createPostElement(id, updatedData);
+        feed.appendChild(postEl);
+      }
+    });
+
+    /* Notes:
+       - Firestore must be enabled in the Firebase Console (mode: test for development).
+       - Storage must be enabled (for media uploads).
+       - This app uses localStorage to avoid the same browser incrementing views/likes repeatedly.
+       - For production, add auth & better security rules.
+    */
+  </script>
 </body>
 </html>
